@@ -29,9 +29,6 @@ struct Board {
 struct Game {
     Board board;
     Player currentPlayer;
-    int selectedX; // Position X de la pièce sélectionnée
-    int selectedY; // Position Y de la pièce sélectionnée
-    bool pieceSelected; // Indique si une pièce est sélectionnée
 };
 
 // Fonction pour initialiser le plateau
@@ -49,10 +46,10 @@ void initialize_board(Board* board) {
     board->grid[0][2] = new Piece(BISHOP, PLAYER1);
     board->grid[0][3] = new Piece(QUEEN, PLAYER1);
 
-    board->grid[1][0] = new Piece(ROOK, PLAYER2);
-    board->grid[1][1] = new Piece(KNIGHT, PLAYER2);
-    board->grid[1][2] = new Piece(BISHOP, PLAYER2);
-    board->grid[1][3] = new Piece(QUEEN, PLAYER2);
+    board->grid[7][7] = new Piece(ROOK, PLAYER2);
+    board->grid[7][6] = new Piece(KNIGHT, PLAYER2);
+    board->grid[7][5] = new Piece(BISHOP, PLAYER2);
+    board->grid[7][4] = new Piece(QUEEN, PLAYER2);
 }
 
 // Fonction pour afficher le plateau dans la console
@@ -152,17 +149,28 @@ void make_move(Game* game, int fromX, int fromY, int toX, int toY) {
 void draw_board(sf::RenderWindow& window, Board* board, sf::Sprite boardSprite, sf::Sprite pieceSprites[2][4]) {
     window.draw(boardSprite); // Dessiner le plateau
 
+    float squareSize = static_cast<float>(TILE_SIZE); // Taille d'une case
+
     // Dessiner les pièces
     for (int y = 0; y < BOARD_SIZE; y++) {
         for (int x = 0; x < BOARD_SIZE; x++) {
             if (board->grid[y][x] != nullptr) {
                 int player = board->grid[y][x]->player;
-                int type = board->grid[y][x]->type;
+                int type = board->grid[y][x]->type - 1; // Ajuster l'index pour correspondre au tableau
 
-                // Dessiner la pièce
-                sf::Sprite pieceSprite = pieceSprites[player][type];
-                pieceSprite.setPosition(x * TILE_SIZE, y * TILE_SIZE); // Positionner la pièce
-                window.draw(pieceSprite); // Dessiner la pièce
+                // Ajuster la taille et la position de la pièce
+                sf::Sprite& pieceSprite = pieceSprites[player][type];
+                float scaleFactor = squareSize / std::max(pieceSprite.getTexture()->getSize().x, pieceSprite.getTexture()->getSize().y);
+                pieceSprite.setScale(scaleFactor, scaleFactor);
+
+                // Centrer la pièce dans la case
+                float pieceWidth = pieceSprite.getGlobalBounds().width;
+                float pieceHeight = pieceSprite.getGlobalBounds().height;
+                float offsetX = (squareSize - pieceWidth) / 2;
+                float offsetY = (squareSize - pieceHeight) / 2;
+
+                pieceSprite.setPosition(x * squareSize + offsetX, y * squareSize + offsetY);
+                window.draw(pieceSprite);
             }
         }
     }
@@ -172,119 +180,197 @@ void draw_board(sf::RenderWindow& window, Board* board, sf::Sprite boardSprite, 
 void free_board(Board* board) {
     for (int i = 0; i < BOARD_SIZE; i++) {
         for (int j = 0; j < BOARD_SIZE; j++) {
-            delete board->grid[i][j]; // Supprimer chaque pièce
-            board->grid[i][j] = nullptr; // Réinitialiser la case
+            delete board->grid[i][j]; // Libérer chaque pièce
         }
     }
 }
 
-// Fonction pour dessiner le plateau avec les mouvements possibles
-void draw_board_with_moves(sf::RenderWindow& window, Board* board, sf::Sprite boardSprite, sf::Sprite pieceSprites[2][4], std::vector<std::pair<int, int> > possibleMoves) {
-    // Dessiner le plateau
-    window.draw(boardSprite);
+// Fonction pour afficher le menu principal
+void displayMenu() {
+    std::cout << "1. Nouvelle partie (2 joueurs)" << std::endl;
+    std::cout << "2. Nouvelle partie contre l'IA" << std::endl;
+    std::cout << "3. Charger une partie" << std::endl;
+    std::cout << "4. Quitter" << std::endl;
+    std::cout << "Choisissez une option : ";
+}
 
-    // Mettre en surbrillance les cases possibles
-    for (const std::pair<int, int>& move : possibleMoves) {
-        sf::RectangleShape highlight(sf::Vector2f(TILE_SIZE, TILE_SIZE));
-        highlight.setFillColor(sf::Color(0, 255, 0, 100)); // Vert transparent
-        highlight.setPosition(move.first * TILE_SIZE, move.second * TILE_SIZE); // Positionner
-        window.draw(highlight); // Dessiner la case mise en évidence
-    }
-
-    // Dessiner les pièces
+// Fonction pour vérifier si un joueur a encore des pièces
+bool hasRemainingPieces(Board* board, Player player) {
     for (int y = 0; y < BOARD_SIZE; y++) {
         for (int x = 0; x < BOARD_SIZE; x++) {
-            if (board->grid[y][x] != nullptr) {
-                sf::Sprite pieceSprite = pieceSprites[board->grid[y][x]->player][board->grid[y][x]->type]; // Récupérer le sprite de la pièce
-                pieceSprite.setPosition(x * TILE_SIZE, y * TILE_SIZE); // Définir la position de la pièce
-                window.draw(pieceSprite); // Dessiner la pièce
+            if (board->grid[y][x] != nullptr && board->grid[y][x]->player == player) {
+                return true;
             }
         }
+    }
+    return false;
+}
+
+// Fonction simple pour le mouvement de l'IA (à améliorer pour une vraie IA)
+void ai_move(Game* game) {
+    std::vector<std::pair<int, int>> pieces;
+    std::vector<std::pair<int, int>> moves;
+
+    // Trouver toutes les pièces de l'IA
+    for (int y = 0; y < BOARD_SIZE; y++) {
+        for (int x = 0; x < BOARD_SIZE; x++) {
+            if (game->board.grid[y][x] != nullptr && game->board.grid[y][x]->player == PLAYER2) {
+                pieces.push_back({x, y});
+            }
+        }
+    }
+
+    // Trouver tous les mouvements possibles
+    for (const auto& piece : pieces) {
+        for (int toY = 0; toY < BOARD_SIZE; toY++) {
+            for (int toX = 0; toX < BOARD_SIZE; toX++) {
+                if (is_valid_move(game->board.grid[piece.second][piece.first]->type, piece.first, piece.second, toX, toY)) {
+                    moves.push_back({toX, toY});
+                }
+            }
+        }
+    }
+
+    // Choisir un mouvement aléatoire
+    if (!moves.empty()) {
+        int randomPieceIndex = rand() % pieces.size();
+        int randomMoveIndex = rand() % moves.size();
+        make_move(game, pieces[randomPieceIndex].first, pieces[randomPieceIndex].second, moves[randomMoveIndex].first, moves[randomMoveIndex].second);
     }
 }
 
 int main() {
-    sf::RenderWindow window(sf::VideoMode(800, 800), "Jeu d'Echecs");
+    sf::RenderWindow window(sf::VideoMode(BOARD_SIZE * TILE_SIZE, BOARD_SIZE * TILE_SIZE), "Jeu d'Echecs");
 
-    // Charger les textures pour le plateau et les pièces
-    sf::Texture boardTexture;
-    sf::Texture pieceTextures[2][4];
-
-    // Chargement des textures
+    // Chargement des textures pour le plateau et les pièces
+    sf::Texture boardTexture, pieceTextures[2][4];
     boardTexture.loadFromFile("/Users/andreea/Documents/echec2/images/board.png");
+    
+    pieceTextures[PLAYER1][QUEEN-1].loadFromFile("/Users/andreea/Documents/echec2/images/player1_queen.png");
+    pieceTextures[PLAYER1][KNIGHT-1].loadFromFile("/Users/andreea/Documents/echec2/images/player1_knight.png");
+    pieceTextures[PLAYER1][ROOK-1].loadFromFile("/Users/andreea/Documents/echec2/images/player1_rook.png");
+    pieceTextures[PLAYER1][BISHOP-1].loadFromFile("/Users/andreea/Documents/echec2/images/player1_bishop.png");
+    
+    pieceTextures[PLAYER2][QUEEN-1].loadFromFile("/Users/andreea/Documents/echec2/images/player2_queen.png");
+    pieceTextures[PLAYER2][KNIGHT-1].loadFromFile("/Users/andreea/Documents/echec2/images/player2_knight.png");
+    pieceTextures[PLAYER2][ROOK-1].loadFromFile("/Users/andreea/Documents/echec2/images/player2_rook.png");
+    pieceTextures[PLAYER2][BISHOP-1].loadFromFile("/Users/andreea/Documents/echec2/images/player2_bishop.png");
 
-    // Créer un sprite à partir de la texture du plateau
     sf::Sprite boardSprite(boardTexture);
-    boardSprite.setScale(0.39f, 0.39f); // Ajuster la taille du plateau à 800x800 pixels
+    boardSprite.setScale(
+        (float)(BOARD_SIZE * TILE_SIZE) / boardTexture.getSize().x,
+        (float)(BOARD_SIZE * TILE_SIZE) / boardTexture.getSize().y
+    );
 
-    // Charger les images des pièces (assurez-vous qu'elles existent)
-    pieceTextures[PLAYER1][QUEEN].loadFromFile("/Users/andreea/Documents/echec2/images/player1_queen.png");
-    pieceTextures[PLAYER1][KNIGHT].loadFromFile("/Users/andreea/Documents/echec2/images/player1_knight.png");
-    pieceTextures[PLAYER1][ROOK].loadFromFile("/Users/andreea/Documents/echec2/images/player1_rook.png");
-    pieceTextures[PLAYER1][BISHOP].loadFromFile("/Users/andreea/Documents/echec2/images/player1_bishop.png");
-
-    pieceTextures[PLAYER2][QUEEN].loadFromFile("/Users/andreea/Documents/echec2/images/player2_queen.png");
-    pieceTextures[PLAYER2][KNIGHT].loadFromFile("/Users/andreea/Documents/echec2/images/player2_knight.png");
-    pieceTextures[PLAYER2][ROOK].loadFromFile("/Users/andreea/Documents/echec2/images/player2_rook.png");
-    pieceTextures[PLAYER2][BISHOP].loadFromFile("/Users/andreea/Documents/echec2/images/player2_bishop.png");
-
-    // Créer des sprites pour les pièces et les ajuster
     sf::Sprite pieceSprites[2][4];
     for (int player = 0; player < 2; player++) {
         for (int type = 0; type < 4; type++) {
             pieceSprites[player][type] = sf::Sprite(pieceTextures[player][type]);
-            pieceSprites[player][type].setScale(0.25f, 0.25f); // Réduire la taille à 100x100 si les images originales sont 400x400
         }
     }
 
-    // Initialiser le jeu
     Game game;
-    initialize_board(&game.board);
-    game.currentPlayer = PLAYER1;
-    game.pieceSelected = false;
+    bool gameStarted = false;
+    bool playingAgainstAI = false;
 
-    // Vecteur pour stocker les mouvements possibles
-    std::vector<std::pair<int, int> > possibleMoves; // Notez l'espace entre 'int' et '>'
+    while (!gameStarted) {
+        displayMenu();
+        int choice;
+        std::cin >> choice;
 
+        switch (choice) {
+            case 1: // Nouvelle partie (2 joueurs)
+                initialize_board(&game.board);
+                game.currentPlayer = PLAYER1;
+                gameStarted = true;
+                break;
+            case 2: // Nouvelle partie contre l'IA
+                initialize_board(&game.board);
+                game.currentPlayer = PLAYER1;
+                gameStarted = true;
+                playingAgainstAI = true;
+                break;
+            case 3: { // Charger une partie
+                std::string filename;
+                std::cout << "Entrez le nom du fichier de sauvegarde : ";
+                std::cin >> filename;
+                load_game(&game, filename.c_str());
+                gameStarted = true;
+                break;
+            }
+            case 4: // Quitter
+                return 0;
+            default:
+                std::cout << "Option invalide. Veuillez réessayer." << std::endl;
+        }
+    }
+
+    // Variables pour gérer la sélection et le déplacement des pièces
+    bool isPieceSelected = false;
+    int selectedX = -1, selectedY = -1;
+
+    // Boucle principale du jeu
     while (window.isOpen()) {
         sf::Event event;
         while (window.pollEvent(event)) {
-            if (event.type == sf::Event::Closed) {
+            if (event.type == sf::Event::Closed)
                 window.close();
-            }
-            if (event.type == sf::Event::MouseButtonPressed) {
+            else if (event.type == sf::Event::MouseButtonPressed) {
                 if (event.mouseButton.button == sf::Mouse::Left) {
-                    int x = event.mouseButton.x / TILE_SIZE; // Calculer la case X
-                    int y = event.mouseButton.y / TILE_SIZE; // Calculer la case Y
+                    int x = event.mouseButton.x / TILE_SIZE;
+                    int y = event.mouseButton.y / TILE_SIZE;
 
-                    if (game.pieceSelected) { // Si une pièce est déjà sélectionnée
-                        // Essayer de faire le mouvement
-                        make_move(&game, game.selectedX, game.selectedY, x, y);
-                        game.pieceSelected = false; // Désélectionner la pièce
-                    } else { // Sélectionner une pièce
-                        Piece* piece = game.board.grid[y][x];
-                        if (piece != nullptr && piece->player == game.currentPlayer) {
-                            game.selectedX = x; // Stocker la position sélectionnée
-                            game.selectedY = y;
-                            game.pieceSelected = true; // Marquer comme pièce sélectionnée
-
-                            // Ici, vous pouvez ajouter la logique pour déterminer les mouvements possibles
-                            possibleMoves.clear(); // Effacer les mouvements possibles précédents
-                            // Ajoutez les mouvements possibles pour la pièce sélectionnée (exemple fictif)
-                            possibleMoves.push_back(std::make_pair(x + 1, y)); // Ajouter un mouvement possible (exemple)
+                    if (!isPieceSelected) {
+                        // Sélectionner une pièce
+                        if (game.board.grid[y][x] != nullptr && game.board.grid[y][x]->player == game.currentPlayer) {
+                            selectedX = x;
+                            selectedY = y;
+                            isPieceSelected = true;
                         }
+                    } else {
+                        // Déplacer la pièce sélectionnée
+                        make_move(&game, selectedX, selectedY, x, y);
+                        isPieceSelected = false;
                     }
+                }
+            }
+            else if (event.type == sf::Event::KeyPressed) {
+                if (event.key.code == sf::Keyboard::S) {
+                    // Sauvegarder la partie
+                    std::string filename;
+                    std::cout << "Entrez le nom du fichier pour la sauvegarde : ";
+                    std::cin >> filename;
+                    save_game(&game, filename.c_str());
+                    std::cout << "Partie sauvegardée." << std::endl;
                 }
             }
         }
 
-        // Effacer la fenêtre
+        // Vérifier s'il y a un gagnant
+        if (!hasRemainingPieces(&game.board, PLAYER1)) {
+            std::cout << "Le joueur 2 a gagné !" << std::endl;
+            window.close();
+        } else if (!hasRemainingPieces(&game.board, PLAYER2)) {
+            std::cout << "Le joueur 1 a gagné !" << std::endl;
+            window.close();
+        }
+
+        // Mouvement de l'IA si c'est son tour
+        if (playingAgainstAI && game.currentPlayer == PLAYER2) {
+            ai_move(&game);
+        }
+
         window.clear();
+        draw_board(window, &game.board, boardSprite, pieceSprites);
 
-        // Dessiner le plateau avec les mouvements possibles
-        draw_board_with_moves(window, &game.board, boardSprite, pieceSprites, possibleMoves); // Passer le vecteur des mouvements possibles
+        // Dessiner un indicateur pour la pièce sélectionnée
+        if (isPieceSelected) {
+            sf::RectangleShape selector(sf::Vector2f(TILE_SIZE, TILE_SIZE));
+            selector.setFillColor(sf::Color(255, 255, 0, 128)); // Jaune semi-transparent
+            selector.setPosition(selectedX * TILE_SIZE, selectedY * TILE_SIZE);
+            window.draw(selector);
+        }
 
-        // Afficher le contenu de la fenêtre
         window.display();
     }
 
